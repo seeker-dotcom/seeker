@@ -41,11 +41,14 @@ const SIDE_QUESTS = [
   { id:"q15", pillar:"knowledge", title:"Read 3 books total",                  deadline:"Jun 30" },
 ];
 
-const todayKey  = () => new Date().toISOString().slice(0, 10);
-const START = "2026-04-01";
-const daysSince = () => Math.max(0, Math.floor((new Date() - new Date(START)) / 86400000));
+/* ── Founder config ── */
+const FOUNDER_USERNAME = "luisdustdar";
+const FOUNDER_COLOR    = "#F5C842";
 
-const store = {
+const todayKey  = () => new Date().toISOString().slice(0, 10);
+const START     = "2026-04-01";
+const daysSince = () => Math.max(0, Math.floor((new Date() - new Date(START)) / 86400000));
+const store     = {
   get: (k)    => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
@@ -92,6 +95,15 @@ const IconIncognito = ({ active }) => (
     <path d="M1 1l22 22" stroke={active?"#C084FC":"#555"} strokeWidth="1.6" strokeLinecap="round"/>
   </svg>
 );
+
+/* ── Founder badge ── */
+function FounderBadge() {
+  return (
+    <span style={{ display:"inline-flex", alignItems:"center", gap:4, background:"#2a1f00", border:"1px solid #F5C84244", borderRadius:6, padding:"2px 7px", fontSize:10, color:FOUNDER_COLOR, fontWeight:600, letterSpacing:0.5, marginLeft:6 }}>
+      ✦ Founder
+    </span>
+  );
+}
 
 /* ── Ring chart ── */
 function RingChart({ pct }) {
@@ -170,56 +182,67 @@ function PinNoteModal({ initial, onSave, onClose, F }) {
 /* ══════════════════════════════
    AUTH SCREEN
 ══════════════════════════════ */
-function AuthScreen({ onAuth, F, MONO }) {
-  const [mode, setMode]       = useState("login");
-  const [email, setEmail]     = useState("");
-  const [password, setPassword] = useState("");
-  const [username, setUsername] = useState("");
+function AuthScreen({ F, MONO }) {
+  const [mode, setMode]           = useState("login");
+  const [email, setEmail]         = useState("");
+  const [password, setPassword]   = useState("");
+  const [username, setUsername]   = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState("");
-  const [success, setSuccess] = useState("");
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState("");
+  const [success, setSuccess]     = useState("");
 
   const inputStyle = {
     width:"100%", background:"#0d0d0d", border:"1px solid #222",
     color:"#e0ddd8", fontSize:15, padding:"14px 16px", borderRadius:14,
     fontFamily:F, outline:"none", boxSizing:"border-box",
-    transition:"border-color .15s",
   };
 
   const handleSubmit = async () => {
-    setError(""); setLoading(true);
+    setError(""); setSuccess(""); setLoading(true);
+
     if (mode === "login") {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) setError(error.message);
     } else {
-      if (!username.trim()) { setError("Username is required."); setLoading(false); return; }
-      if (username.length < 3) { setError("Username must be at least 3 characters."); setLoading(false); return; }
-      if (!/^[a-z0-9_]+$/.test(username)) { setError("Username can only contain lowercase letters, numbers, and underscores."); setLoading(false); return; }
+      /* ── Validation ── */
+      if (!username.trim())              { setError("Username is required.");                                          setLoading(false); return; }
+      if (username.length < 3)           { setError("Username must be at least 3 characters.");                       setLoading(false); return; }
+      if (!/^[a-z0-9_]+$/.test(username)){ setError("Username: lowercase letters, numbers and underscores only.");   setLoading(false); return; }
+      if (!email.trim())                 { setError("Email is required.");                                            setLoading(false); return; }
+      if (password.length < 8)           { setError("Password must be at least 8 characters.");                      setLoading(false); return; }
 
-      const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
+      /* ── Check username availability before signing up ── */
+      const { data: existing } = await supabase
+        .from("profiles")
+        .select("username")
+        .eq("username", username.toLowerCase())
+        .maybeSingle();
+      if (existing) { setError("Username already taken. Try another."); setLoading(false); return; }
+
+      /* ── Sign up — trigger handles profile creation ── */
+      const { error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            username:     username.toLowerCase(),
+            display_name: displayName.trim() || username,
+          },
+        },
+      });
+
       if (signUpError) { setError(signUpError.message); setLoading(false); return; }
 
-      if (data.user) {
-        const { error: profileError } = await supabase.from("profiles").insert({
-          id: data.user.id,
-          username: username.toLowerCase(),
-          display_name: displayName || username,
-        });
-        if (profileError) {
-          if (profileError.message.includes("unique")) setError("Username already taken. Try another.");
-          else setError(profileError.message);
-          setLoading(false); return;
-        }
-      }
-      setSuccess("Account created! You're in.");
+      setSuccess("Account created! Check your email to confirm, then sign in.");
+      setMode("login");
     }
     setLoading(false);
   };
 
   return (
     <div style={{minHeight:"100vh",background:"#000",display:"flex",justifyContent:"center",alignItems:"center",fontFamily:F,padding:"0 20px"}}>
-      <div style={{width:"100%",maxWidth:380}}>
+      <div style={{width:"100%",maxWidth:360}}>
 
         {/* Logo */}
         <div style={{textAlign:"center",marginBottom:48}}>
@@ -228,47 +251,70 @@ function AuthScreen({ onAuth, F, MONO }) {
         </div>
 
         {/* Toggle */}
-        <div style={{display:"flex",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:14,padding:4,marginBottom:28}}>
-          {["login","signup"].map(m => (
+        <div style={{display:"flex",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:14,padding:4,marginBottom:24}}>
+          {["login","signup"].map(m=>(
             <button key={m} onClick={()=>{setMode(m);setError("");setSuccess("");}}
-              style={{flex:1,padding:"10px 0",background:mode===m?"#fff":"transparent",border:"none",borderRadius:10,fontSize:13,fontWeight:600,color:mode===m?"#000":"#555",cursor:"pointer",fontFamily:F,transition:"all .2s",textTransform:"capitalize"}}>
-              {m === "login" ? "Sign in" : "Create account"}
+              style={{flex:1,padding:"10px 0",background:mode===m?"#fff":"transparent",border:"none",borderRadius:10,fontSize:13,fontWeight:600,color:mode===m?"#000":"#555",cursor:"pointer",fontFamily:F,transition:"all .2s"}}>
+              {m==="login"?"Sign in":"Create account"}
             </button>
           ))}
         </div>
 
         {/* Fields */}
-        <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:20}}>
-          {mode === "signup" && (
+        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:16}}>
+          {mode==="signup"&&(
             <>
-              <input value={username} onChange={e=>setUsername(e.target.value.toLowerCase())}
-                placeholder="Username (e.g. luis)" style={inputStyle} type="text" autoCapitalize="none"/>
-              <input value={displayName} onChange={e=>setDisplayName(e.target.value)}
-                placeholder="Display name (e.g. Luis)" style={inputStyle} type="text"/>
+              <input
+                value={username}
+                onChange={e=>setUsername(e.target.value.toLowerCase())}
+                placeholder="Username"
+                style={inputStyle}
+                type="text"
+                autoCapitalize="none"
+                autoCorrect="off"
+              />
+              <input
+                value={displayName}
+                onChange={e=>setDisplayName(e.target.value)}
+                placeholder="Display name"
+                style={inputStyle}
+                type="text"
+              />
             </>
           )}
-          <input value={email} onChange={e=>setEmail(e.target.value)}
-            placeholder="Email" style={inputStyle} type="email" autoCapitalize="none"/>
-          <input value={password} onChange={e=>setPassword(e.target.value)}
-            placeholder="Password" style={inputStyle} type="password"
-            onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
+          <input
+            value={email}
+            onChange={e=>setEmail(e.target.value)}
+            placeholder="Email"
+            style={inputStyle}
+            type="email"
+            autoCapitalize="none"
+          />
+          <input
+            value={password}
+            onChange={e=>setPassword(e.target.value)}
+            placeholder="Password"
+            style={inputStyle}
+            type="password"
+            onKeyDown={e=>e.key==="Enter"&&handleSubmit()}
+          />
         </div>
 
-        {error && (
-          <div style={{background:"#1a0808",border:"1px solid #3a1010",borderRadius:10,padding:"12px 14px",marginBottom:16,fontSize:13,color:"#ff8080",lineHeight:1.5}}>{error}</div>
+        {error&&(
+          <div style={{background:"#1a0808",border:"1px solid #3a1010",borderRadius:10,padding:"12px 14px",marginBottom:14,fontSize:13,color:"#ff8080",lineHeight:1.5}}>{error}</div>
         )}
-        {success && (
-          <div style={{background:"#081a0a",border:"1px solid #103a14",borderRadius:10,padding:"12px 14px",marginBottom:16,fontSize:13,color:"#80ff90",lineHeight:1.5}}>{success}</div>
+        {success&&(
+          <div style={{background:"#081a0a",border:"1px solid #103a14",borderRadius:10,padding:"12px 14px",marginBottom:14,fontSize:13,color:"#80ff90",lineHeight:1.5}}>{success}</div>
         )}
 
         <button onClick={handleSubmit} disabled={loading}
-          style={{width:"100%",padding:"15px 0",background:loading?"#111":"#fff",border:"none",borderRadius:14,fontSize:15,fontWeight:600,color:loading?"#444":"#000",cursor:loading?"not-allowed":"pointer",fontFamily:F,transition:"all .2s",letterSpacing:0.3}}>
-          {loading ? "..." : mode === "login" ? "Sign in" : "Create account"}
+          style={{width:"100%",padding:"15px 0",background:loading?"#111":"#fff",border:"none",borderRadius:14,fontSize:15,fontWeight:600,color:loading?"#444":"#000",cursor:loading?"not-allowed":"pointer",fontFamily:F,transition:"all .2s"}}>
+          {loading?"...":mode==="login"?"Sign in":"Create account"}
         </button>
 
-        {mode === "signup" && (
-          <div style={{fontSize:12,color:"#444",textAlign:"center",marginTop:16,lineHeight:1.6}}>
-            Your username is permanent and public. Choose wisely.
+        {mode==="signup"&&(
+          <div style={{fontSize:12,color:"#333",textAlign:"center",marginTop:14,lineHeight:1.6}}>
+            Username is permanent and public.
           </div>
         )}
       </div>
@@ -285,17 +331,17 @@ function CoachPage({ logs, tasks, quests, streak, totalTasks, F, MONO }) {
   const [cached, setCached]   = useState(null);
   const [error, setError]     = useState("");
 
-  useEffect(() => {
+  useEffect(()=>{
     const saved = store.get("sk-coach");
-    if (saved?.date === todayKey()) setCached(saved.msg);
-  }, []);
+    if (saved?.date===todayKey()) setCached(saved.msg);
+  },[]);
 
   const buildPrompt = () => {
     const last7 = Object.entries(logs).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,7)
-      .map(([date,log]) => `${date} → ${PILLARS.map(p=>`${p.label[0]}:${log[p.id]??0}/${DAILY_TASKS[p.id].length}`).join(" ")}`)
-      .join("\n") || "No data yet — this is day 1.";
+      .map(([date,log])=>`${date} → ${PILLARS.map(p=>`${p.label[0]}:${log[p.id]??0}/${DAILY_TASKS[p.id].length}`).join(" ")}`)
+      .join("\n")||"No data yet — this is day 1.";
     const todayDone = PILLARS.map(p=>`${p.label}: ${DAILY_TASKS[p.id].filter((_,i)=>tasks[`${p.id}-${i}`]).length}/${DAILY_TASKS[p.id].length}`).join(", ");
-    const questsDone = SIDE_QUESTS.filter(q=>quests[q.id]).map(q=>q.title).join(", ") || "none yet";
+    const questsDone = SIDE_QUESTS.filter(q=>quests[q.id]).map(q=>q.title).join(", ")||"none yet";
     return `You are the AI coach inside Seekers — a personal growth app. The user is on a 3-month transformation across 4 pillars: Knowledge, Peace, Build, and Sports.\n\nLast 7 days:\n${last7}\n\nToday so far: ${todayDone}\nStreak: ${streak} days\nQuests completed: ${questsDone}\n\nGive a raw, honest, direct analysis. No fluff. No fake positivity.\n\nFormat:\n1. One sentence on what the data actually shows.\n2. One sentence calling out the pillar being avoided — be specific.\n3. One sentence on what's working.\n4. One bold specific action for TODAY — doable in the next 2 hours.\n\nMax 5 sentences. No greetings. No sign-offs.`;
   };
 
@@ -304,45 +350,43 @@ function CoachPage({ logs, tasks, quests, streak, totalTasks, F, MONO }) {
     const apiKey = import.meta.env.VITE_ANTHROPIC_KEY;
     if (!apiKey) { setError("API key not found. Add VITE_ANTHROPIC_KEY to Vercel."); setLoading(false); return; }
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("https://api.anthropic.com/v1/messages",{
         method:"POST",
         headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
         body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:300,stream:true,messages:[{role:"user",content:buildPrompt()}]}),
       });
-      if (!res.ok) { const e=await res.json(); throw new Error(e.error?.message||"API error"); }
-      const reader=res.body.getReader(), decoder=new TextDecoder();
+      if(!res.ok){const e=await res.json();throw new Error(e.error?.message||"API error");}
+      const reader=res.body.getReader(),decoder=new TextDecoder();
       let full="";
       while(true){
         const {done,value}=await reader.read(); if(done)break;
         const lines=decoder.decode(value).split("\n").filter(l=>l.startsWith("data: "));
         for(const line of lines){
           const data=line.slice(6); if(data==="[DONE]")continue;
-          try{ const p=JSON.parse(data); if(p.type==="content_block_delta"&&p.delta?.text){full+=p.delta.text;setMessage(full);} }catch{}
+          try{const p=JSON.parse(data);if(p.type==="content_block_delta"&&p.delta?.text){full+=p.delta.text;setMessage(full);}}catch{}
         }
       }
       store.set("sk-coach",{date:todayKey(),msg:full}); setCached(full);
-    } catch(e){ setError(e.message||"Something went wrong."); }
+    }catch(e){setError(e.message||"Something went wrong.");}
     setLoading(false);
   };
 
-  const display   = message || cached;
-  const sentences = display ? display.split(/(?<=[.!?])\s+/).filter(s=>s.trim().length>0) : [];
+  const display   = message||cached;
+  const sentences = display?display.split(/(?<=[.!?])\s+/).filter(s=>s.trim().length>0):[];
   const colors    = ["#5B9CF6","#C084FC","#34D399","#FB923C"];
 
   return (
     <div style={{padding:"0 16px"}}>
       <div style={{background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:20,padding:"20px",marginBottom:20}}>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
-          <div style={{width:40,height:40,borderRadius:"50%",background:"#111",border:"1px solid #222",display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <IconCoach a={true}/>
-          </div>
+          <div style={{width:40,height:40,borderRadius:"50%",background:"#111",border:"1px solid #222",display:"flex",alignItems:"center",justifyContent:"center"}}><IconCoach a={true}/></div>
           <div>
             <div style={{fontSize:15,fontWeight:600,color:"#fff"}}>Your Coach</div>
             <div style={{fontSize:12,color:"#555"}}>Brutal. Direct. Honest.</div>
           </div>
           {cached&&!loading&&<div style={{marginLeft:"auto",fontSize:10,color:"#333",fontFamily:MONO}}>Today</div>}
         </div>
-        {display ? (
+        {display?(
           <div style={{marginBottom:16}}>
             {sentences.map((sentence,i)=>(
               <div key={i} style={{display:"flex",gap:10,marginBottom:i<sentences.length-1?14:0,alignItems:"flex-start"}}>
@@ -351,10 +395,10 @@ function CoachPage({ logs, tasks, quests, streak, totalTasks, F, MONO }) {
               </div>
             ))}
           </div>
-        ) : !loading && (
+        ):!loading&&(
           <div style={{fontSize:14,color:"#444",fontStyle:"italic",marginBottom:16,lineHeight:1.6}}>Your coach reads your last 7 days and tells you exactly what's happening.</div>
         )}
-        {loading && (
+        {loading&&(
           <div style={{marginBottom:16}}>
             <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:8}}>
               <div style={{display:"flex",gap:3}}>{[0,1,2].map(i=><div key={i} style={{width:6,height:6,borderRadius:"50%",background:"#333"}}/>)}</div>
@@ -372,23 +416,23 @@ function CoachPage({ logs, tasks, quests, streak, totalTasks, F, MONO }) {
       <div style={{background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:20,padding:"18px 16px",marginBottom:20}}>
         <div style={{fontSize:11,color:"#555",textTransform:"uppercase",letterSpacing:1,marginBottom:14}}>What the coach sees</div>
         {Object.keys(logs).length===0
-          ? <div style={{fontSize:13,color:"#444",fontStyle:"italic"}}>No days logged yet. Check off tasks on the Home tab first.</div>
-          : Object.entries(logs).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,7).map(([date,log])=>{
-              const total=PILLARS.reduce((s,p)=>s+(log[p.id]??0),0);
-              const pct=Math.round((total/(PILLARS.length*3))*100);
-              return (
-                <div key={date} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-                  <span style={{fontSize:11,color:"#555",fontFamily:MONO,minWidth:52}}>{new Date(date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span>
-                  <div style={{flex:1,display:"flex",gap:3,height:20,alignItems:"flex-end"}}>
-                    {PILLARS.map(p=>{
-                      const score=((log[p.id]??0)/DAILY_TASKS[p.id].length)*100;
-                      return <div key={p.id} style={{flex:1,height:"100%",background:"#1a1a1a",borderRadius:3,overflow:"hidden",display:"flex",alignItems:"flex-end"}}><div style={{width:"100%",height:`${score}%`,background:p.color,borderRadius:3}}/></div>;
-                    })}
-                  </div>
-                  <span style={{fontSize:11,color:pct===100?"#34D399":pct>=50?"#888":"#444",fontFamily:MONO,minWidth:34,textAlign:"right"}}>{pct}%</span>
+          ?<div style={{fontSize:13,color:"#444",fontStyle:"italic"}}>No days logged yet. Check off tasks on the Home tab first.</div>
+          :Object.entries(logs).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,7).map(([date,log])=>{
+            const total=PILLARS.reduce((s,p)=>s+(log[p.id]??0),0);
+            const pct=Math.round((total/(PILLARS.length*3))*100);
+            return(
+              <div key={date} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                <span style={{fontSize:11,color:"#555",fontFamily:MONO,minWidth:52}}>{new Date(date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span>
+                <div style={{flex:1,display:"flex",gap:3,height:20,alignItems:"flex-end"}}>
+                  {PILLARS.map(p=>{
+                    const score=((log[p.id]??0)/DAILY_TASKS[p.id].length)*100;
+                    return<div key={p.id} style={{flex:1,height:"100%",background:"#1a1a1a",borderRadius:3,overflow:"hidden",display:"flex",alignItems:"flex-end"}}><div style={{width:"100%",height:`${score}%`,background:p.color,borderRadius:3}}/></div>;
+                  })}
                 </div>
-              );
-            })
+                <span style={{fontSize:11,color:pct===100?"#34D399":pct>=50?"#888":"#444",fontFamily:MONO,minWidth:34,textAlign:"right"}}>{pct}%</span>
+              </div>
+            );
+          })
         }
       </div>
       <div style={{display:"flex",gap:12,flexWrap:"wrap",paddingBottom:8}}>
@@ -411,162 +455,161 @@ export default function App() {
   const F    = "DM Sans, system-ui, sans-serif";
   const MONO = "DM Mono, monospace";
 
-  const [session, setSession]     = useState(null);
-  const [profile, setProfile]     = useState(null);
+  const [session, setSession]         = useState(null);
+  const [profile, setProfile]         = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  const [view, setView]           = useState("home");
-  const [tasks, setTasks]         = useState({});
-  const [logs, setLogs]           = useState({});
-  const [quests, setQuests]       = useState({});
-  const [streak, setStreak]       = useState(0);
-  const [photo, setPhoto]         = useState(null);
-  const [bio, setBio]             = useState("");
-  const [tagline, setTagline]     = useState("");
-  const [obsession, setObsession] = useState("");
-  const [pinnedNote, setPinnedNote] = useState("");
-  const [pinnedColor]             = useState("#5B9CF6");
-  const [incognito, setIncognito] = useState(false);
+  const [view, setView]               = useState("home");
+  const [tasks, setTasks]             = useState({});
+  const [logs, setLogs]               = useState({});
+  const [quests, setQuests]           = useState({});
+  const [streak, setStreak]           = useState(0);
+  const [photo, setPhoto]             = useState(null);
+  const [bio, setBio]                 = useState("");
+  const [tagline, setTagline]         = useState("");
+  const [obsession, setObsession]     = useState("");
+  const [pinnedNote, setPinnedNote]   = useState("");
+  const [pinnedColor]                 = useState("#5B9CF6");
+  const [incognito, setIncognito]     = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
   const fileRef = useRef();
 
-  /* ── Auth listener ── */
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+  /* ── Auth ── */
+  useEffect(()=>{
+    supabase.auth.getSession().then(({data:{session}})=>{
       setSession(session);
-      if (session) loadProfile(session.user.id);
+      if(session) loadProfile(session.user.id);
       else setAuthLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const {data:{subscription}} = supabase.auth.onAuthStateChange((_,session)=>{
       setSession(session);
-      if (session) loadProfile(session.user.id);
-      else { setAuthLoading(false); setProfile(null); }
+      if(session) loadProfile(session.user.id);
+      else{setAuthLoading(false);setProfile(null);}
     });
-    return () => subscription.unsubscribe();
-  }, []);
+    return()=>subscription.unsubscribe();
+  },[]);
 
   const loadProfile = async (userId) => {
-    const { data } = await supabase.from("profiles").select("*").eq("id", userId).single();
-    if (data) {
+    const {data} = await supabase.from("profiles").select("*").eq("id",userId).single();
+    if(data){
       setProfile(data);
-      setBio(data.bio || "");
-      setTagline(data.tagline || "");
-      setObsession(data.obsession || "");
-      setPinnedNote(data.pinned_note || "");
+      setBio(data.bio||"");
+      setTagline(data.tagline||"");
+      setObsession(data.obsession||"");
+      setPinnedNote(data.pinned_note||"");
     }
     await loadLogs(userId);
     await loadQuests(userId);
-    const savedTasks = store.get("sk-tasks");
-    if (savedTasks?.date === todayKey()) setTasks(savedTasks.data ?? {});
-    const ig = store.get("sk-incognito") ?? false; setIncognito(ig);
-    const p  = store.get("sk-photo"); if (p) setPhoto(p);
+    const savedTasks=store.get("sk-tasks");
+    if(savedTasks?.date===todayKey()) setTasks(savedTasks.data??{});
+    setIncognito(store.get("sk-incognito")??false);
+    const p=store.get("sk-photo"); if(p) setPhoto(p);
     setAuthLoading(false);
   };
 
   const loadLogs = async (userId) => {
-    const { data } = await supabase.from("logs").select("*").eq("user_id", userId);
-    if (data) {
-      const mapped = {};
-      data.forEach(row => { mapped[row.date] = { knowledge:row.knowledge, peace:row.peace, build:row.build, sports:row.sports }; });
+    const {data} = await supabase.from("logs").select("*").eq("user_id",userId);
+    if(data){
+      const mapped={};
+      data.forEach(row=>{mapped[row.date]={knowledge:row.knowledge,peace:row.peace,build:row.build,sports:row.sports};});
       setLogs(mapped);
     }
   };
 
   const loadQuests = async (userId) => {
-    const { data } = await supabase.from("quests").select("*").eq("user_id", userId);
-    if (data) {
-      const mapped = {};
-      data.forEach(row => { mapped[row.quest_id] = row.completed; });
+    const {data} = await supabase.from("quests").select("*").eq("user_id",userId);
+    if(data){
+      const mapped={};
+      data.forEach(row=>{mapped[row.quest_id]=row.completed;});
       setQuests(mapped);
     }
   };
 
   /* ── Streak ── */
-  useEffect(() => {
-    let s = 0;
-    const d = new Date(); d.setDate(d.getDate()-1);
-    while (true) {
-      const k = d.toISOString().slice(0,10);
-      const e = logs[k];
-      if (!e || Object.values(e).every(v=>v===0)) break;
+  useEffect(()=>{
+    let s=0;
+    const d=new Date(); d.setDate(d.getDate()-1);
+    while(true){
+      const k=d.toISOString().slice(0,10);
+      const e=logs[k];
+      if(!e||Object.values(e).every(v=>v===0))break;
       s++; d.setDate(d.getDate()-1);
     }
     setStreak(s);
-  }, [logs]);
+  },[logs]);
 
   /* ── Actions ── */
-  const toggleTask = async (pillar, idx) => {
-    const key  = `${pillar}-${idx}`;
-    const next = { ...tasks, [key]: !tasks[key] };
+  const toggleTask = async (pillar,idx) => {
+    const key=`${pillar}-${idx}`;
+    const next={...tasks,[key]:!tasks[key]};
     setTasks(next);
-    store.set("sk-tasks", { date:todayKey(), data:next });
-    const dayLog = {};
-    PILLARS.forEach(p => { dayLog[p.id] = DAILY_TASKS[p.id].filter((_,i)=>next[`${p.id}-${i}`]).length; });
-    const nl = { ...logs, [todayKey()]: dayLog };
+    store.set("sk-tasks",{date:todayKey(),data:next});
+    const dayLog={};
+    PILLARS.forEach(p=>{dayLog[p.id]=DAILY_TASKS[p.id].filter((_,i)=>next[`${p.id}-${i}`]).length;});
+    const nl={...logs,[todayKey()]:dayLog};
     setLogs(nl);
-    if (session) {
-      await supabase.from("logs").upsert({ user_id:session.user.id, date:todayKey(), ...dayLog }, { onConflict:"user_id,date" });
-    }
+    if(session) await supabase.from("logs").upsert({user_id:session.user.id,date:todayKey(),...dayLog},{onConflict:"user_id,date"});
   };
 
   const toggleQuest = async (id) => {
-    const next = { ...quests, [id]: !quests[id] };
+    const next={...quests,[id]:!quests[id]};
     setQuests(next);
-    if (session) {
-      await supabase.from("quests").upsert({ user_id:session.user.id, quest_id:id, completed:next[id] }, { onConflict:"user_id,quest_id" });
-    }
+    if(session) await supabase.from("quests").upsert({user_id:session.user.id,quest_id:id,completed:next[id]},{onConflict:"user_id,quest_id"});
   };
 
-  const updateProfile = async (field, value) => {
-    if (!session) return;
-    await supabase.from("profiles").update({ [field]: value }).eq("id", session.user.id);
-    setProfile(prev => ({ ...prev, [field]: value }));
+  const updateProfile = async (field,value) => {
+    if(!session)return;
+    await supabase.from("profiles").update({[field]:value}).eq("id",session.user.id);
+    setProfile(prev=>({...prev,[field]:value}));
   };
 
-  const saveBio       = v => { setBio(v);       updateProfile("bio", v); };
-  const saveTagline   = v => { setTagline(v);   updateProfile("tagline", v); };
-  const saveObsession = v => { setObsession(v); updateProfile("obsession", v); };
-  const savePinned    = v => { setPinnedNote(v);updateProfile("pinned_note", v); };
-  const clearPinned   = () => { setPinnedNote("");updateProfile("pinned_note", ""); };
-  const toggleIncognito = () => { const n=!incognito; setIncognito(n); store.set("sk-incognito",n); };
+  const saveBio       = v=>{setBio(v);       updateProfile("bio",v);};
+  const saveTagline   = v=>{setTagline(v);   updateProfile("tagline",v);};
+  const saveObsession = v=>{setObsession(v); updateProfile("obsession",v);};
+  const savePinned    = v=>{setPinnedNote(v);updateProfile("pinned_note",v);};
+  const clearPinned   = ()=>{setPinnedNote("");updateProfile("pinned_note","");};
+  const toggleIncognito = ()=>{const n=!incognito;setIncognito(n);store.set("sk-incognito",n);};
 
-  const handlePhoto = e => {
-    const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => { setPhoto(ev.target.result); store.set("sk-photo", ev.target.result); };
+  const handlePhoto = e=>{
+    const file=e.target.files[0]; if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{setPhoto(ev.target.result);store.set("sk-photo",ev.target.result);};
     reader.readAsDataURL(file);
   };
 
-  const signOut = async () => {
+  const signOut = async()=>{
     await supabase.auth.signOut();
-    setTasks({}); setLogs({}); setQuests({}); setStreak(0);
-    setPhoto(null); setBio(""); setTagline(""); setObsession(""); setPinnedNote("");
+    setTasks({});setLogs({});setQuests({});setStreak(0);
+    setPhoto(null);setBio("");setTagline("");setObsession("");setPinnedNote("");
   };
 
   /* ── Computed ── */
   const totalDone  = Object.values(tasks).filter(Boolean).length;
-  const totalTasks = PILLARS.length * 3;
+  const totalTasks = PILLARS.length*3;
   const questsDone = Object.values(quests).filter(Boolean).length;
   const daysLogged = Object.keys(logs).length;
   const todayPct   = Math.round((totalDone/totalTasks)*100);
 
-  const pillarToday   = id => Math.round((DAILY_TASKS[id].filter((_,i)=>tasks[`${id}-${i}`]).length/DAILY_TASKS[id].length)*100);
-  const pillarAllTime = id => daysLogged===0?0:Math.round((Object.values(logs).reduce((a,d)=>a+(d[id]??0),0)/(daysLogged*DAILY_TASKS[id].length))*100);
-  const overall       = () => daysLogged===0?0:Math.round((Object.values(logs).reduce((a,d)=>a+PILLARS.reduce((s,p)=>s+(d[p.id]??0),0),0)/(daysLogged*totalTasks))*100);
+  const pillarToday   = id=>Math.round((DAILY_TASKS[id].filter((_,i)=>tasks[`${id}-${i}`]).length/DAILY_TASKS[id].length)*100);
+  const pillarAllTime = id=>daysLogged===0?0:Math.round((Object.values(logs).reduce((a,d)=>a+(d[id]??0),0)/(daysLogged*DAILY_TASKS[id].length))*100);
+  const overall       = ()=>daysLogged===0?0:Math.round((Object.values(logs).reduce((a,d)=>a+PILLARS.reduce((s,p)=>s+(d[p.id]??0),0),0)/(daysLogged*totalTasks))*100);
 
-  const displayName = profile?.display_name || profile?.username || "Seeker";
-  const stackLabel  = `${displayName}'s Stack`;
+  /* ── Founder check ── */
+  const isFounder    = profile?.username === FOUNDER_USERNAME;
+  const displayName  = profile?.display_name || profile?.username || "Seeker";
+  const nameColor    = isFounder ? FOUNDER_COLOR : "#fff";
+  const stackLabel   = `${displayName}'s Stack`;
 
   const TABS = [
-    { id:"home",    label:"Home",    Icon:({a})=><IconHome a={a}/> },
-    { id:"feed",    label:"Feed",    Icon:({a})=><IconFeed a={a}/> },
-    { id:"coach",   label:"Coach",   Icon:({a})=><IconCoach a={a}/> },
-    { id:"quests",  label:"Quests",  Icon:({a})=><IconQuests a={a}/> },
-    { id:"profile", label:"Profile", Icon:({a})=><IconProfile a={a} photo={photo}/> },
+    {id:"home",    label:"Home",    Icon:({a})=><IconHome a={a}/>},
+    {id:"feed",    label:"Feed",    Icon:({a})=><IconFeed a={a}/>},
+    {id:"coach",   label:"Coach",   Icon:({a})=><IconCoach a={a}/>},
+    {id:"quests",  label:"Quests",  Icon:({a})=><IconQuests a={a}/>},
+    {id:"profile", label:"Profile", Icon:({a})=><IconProfile a={a} photo={photo}/>},
   ];
 
   /* ── Loading ── */
-  if (authLoading) return (
+  if(authLoading) return(
     <div style={{minHeight:"100vh",background:"#000",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F}}>
       <div style={{textAlign:"center"}}>
         <div style={{fontSize:24,fontWeight:700,color:"#fff",letterSpacing:-0.5,marginBottom:8}}>SEEKERS</div>
@@ -575,11 +618,9 @@ export default function App() {
     </div>
   );
 
-  /* ── Auth screen ── */
-  if (!session) return <AuthScreen onAuth={()=>{}} F={F} MONO={MONO}/>;
+  if(!session) return <AuthScreen F={F} MONO={MONO}/>;
 
-  /* ── Main app ── */
-  return (
+  return(
     <div style={{fontFamily:F,background:"#000",minHeight:"100vh",display:"flex",justifyContent:"center"}}>
       <div style={{width:"100%",maxWidth:430,position:"relative",minHeight:"100vh",background:"#000"}}>
         <div style={{height:48}}/>
@@ -599,8 +640,8 @@ export default function App() {
             <div style={{display:"flex",alignItems:"center",gap:6,background:"#111",border:"1px solid #1e1e1e",borderRadius:20,padding:"6px 12px"}}>
               <span style={{fontSize:14}}>🔥</span>
               {incognito
-                ? <span style={{fontSize:13,color:"#555"}}>—</span>
-                : <><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{streak}</span><span style={{fontSize:11,color:"#555"}}>day{streak!==1?"s":""}</span></>
+                ?<span style={{fontSize:13,color:"#555"}}>—</span>
+                :<><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{streak}</span><span style={{fontSize:11,color:"#555"}}>day{streak!==1?"s":""}</span></>
               }
             </div>
           </div>
@@ -647,8 +688,8 @@ export default function App() {
                     <span style={{fontSize:12,fontWeight:600,color:pillar.color,fontFamily:MONO}}>{pillarToday(pillar.id)}%</span>
                   </div>
                   {DAILY_TASKS[pillar.id].map((task,i)=>{
-                    const key=`${pillar.id}-${i}`, done=!!tasks[key];
-                    return (
+                    const key=`${pillar.id}-${i}`,done=!!tasks[key];
+                    return(
                       <div key={key} onClick={()=>toggleTask(pillar.id,i)}
                         style={{display:"flex",alignItems:"flex-start",gap:12,padding:"13px 14px",background:"#0d0d0d",border:"1px solid #1e1e1e",borderRadius:14,marginBottom:6,cursor:"pointer",opacity:done?0.45:1,transition:"opacity .15s"}}>
                         <div style={{width:20,height:20,borderRadius:"50%",border:`1.5px solid ${done?pillar.color:"#333"}`,background:done?pillar.color:"transparent",flexShrink:0,marginTop:1,display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s"}}>
@@ -682,7 +723,7 @@ export default function App() {
               {PILLARS.map(pillar=>{
                 const qs=SIDE_QUESTS.filter(q=>q.pillar===pillar.id);
                 const done=qs.filter(q=>quests[q.id]).length;
-                return (
+                return(
                   <div key={pillar.id} style={{marginBottom:28}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
                       <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -693,7 +734,7 @@ export default function App() {
                     </div>
                     {qs.map(q=>{
                       const d=!!quests[q.id];
-                      return (
+                      return(
                         <div key={q.id} onClick={()=>toggleQuest(q.id)}
                           style={{display:"flex",alignItems:"flex-start",gap:12,padding:"13px 14px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:14,marginBottom:6,cursor:"pointer",opacity:d?0.4:1,transition:"opacity .15s"}}>
                           <div style={{width:20,height:20,borderRadius:"50%",border:`1.5px solid ${d?pillar.color:"#333"}`,background:d?pillar.color:"transparent",flexShrink:0,marginTop:1,display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s"}}>
@@ -718,16 +759,22 @@ export default function App() {
               <div style={{display:"flex",flexDirection:"column",alignItems:"center",paddingBottom:24,borderBottom:"1px solid #111",marginBottom:24}}>
                 <div style={{position:"relative",marginBottom:14}} onClick={()=>fileRef.current.click()}>
                   {photo
-                    ? <img src={photo} alt={displayName} style={{width:90,height:90,borderRadius:"50%",objectFit:"cover",border:"2px solid #222",cursor:"pointer"}}/>
-                    : <div style={{width:90,height:90,borderRadius:"50%",background:"#111",border:"1px solid #222",display:"flex",alignItems:"center",justifyContent:"center",fontSize:34,fontWeight:700,color:"#fff",cursor:"pointer"}}>{displayName[0].toUpperCase()}</div>
+                    ?<img src={photo} alt={displayName} style={{width:90,height:90,borderRadius:"50%",objectFit:"cover",border:"2px solid #222",cursor:"pointer"}}/>
+                    :<div style={{width:90,height:90,borderRadius:"50%",background:"#111",border:`1px solid ${isFounder?"#F5C84244":"#222"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:34,fontWeight:700,color:nameColor,cursor:"pointer"}}>{displayName[0].toUpperCase()}</div>
                   }
                   <div style={{position:"absolute",bottom:0,right:0,width:26,height:26,borderRadius:"50%",background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
                     <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M9.5 1.5l2 2-7 7H2.5v-2l7-7z" stroke="#000" strokeWidth="1.2" strokeLinejoin="round"/></svg>
                   </div>
                   <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handlePhoto}/>
                 </div>
-                <div style={{fontSize:22,fontWeight:700,color:"#fff",letterSpacing:-0.3,marginBottom:2}}>{displayName}</div>
-                {profile?.username && <div style={{fontSize:12,color:"#555",marginBottom:6}}>@{profile.username}</div>}
+
+                {/* Name + founder badge */}
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                  <div style={{fontSize:22,fontWeight:700,color:nameColor,letterSpacing:-0.3}}>{displayName}</div>
+                  {isFounder&&<FounderBadge/>}
+                </div>
+
+                {profile?.username&&<div style={{fontSize:12,color:"#555",marginBottom:6}}>@{profile.username}</div>}
                 <InlineEdit value={tagline} placeholder="Your seeking in 3–5 words…" onSave={saveTagline} F={F} style={{fontSize:13,color:"#555",letterSpacing:0.3,textAlign:"center"}}/>
                 <div style={{fontSize:11,color:"#333",marginTop:6}}>Seeker · Day {daysSince()}</div>
                 <div style={{width:"100%",marginTop:16}}>
@@ -778,12 +825,11 @@ export default function App() {
                 <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
                   {SIDE_QUESTS.map(q=>{
                     const pc=PILLARS.find(p=>p.id===q.pillar)?.color;
-                    return <div key={q.id} style={{width:11,height:11,borderRadius:"50%",background:quests[q.id]?pc:"#1a1a1a",border:`1px solid ${quests[q.id]?pc:"#2a2a2a"}`,transition:"all .3s"}}/>;
+                    return<div key={q.id} style={{width:11,height:11,borderRadius:"50%",background:quests[q.id]?pc:"#1a1a1a",border:`1px solid ${quests[q.id]?pc:"#2a2a2a"}`,transition:"all .3s"}}/>;
                   })}
                 </div>
               </div>
 
-              {/* Sign out */}
               <button onClick={signOut}
                 style={{width:"100%",padding:"13px 0",background:"transparent",border:"1px solid #1a1a1a",borderRadius:14,fontSize:13,color:"#555",cursor:"pointer",fontFamily:F,marginBottom:20}}>
                 Sign out
@@ -797,7 +843,7 @@ export default function App() {
           <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",padding:"8px 0 4px"}}>
             {TABS.map(tab=>{
               const active=view===tab.id;
-              return (
+              return(
                 <button key={tab.id} onClick={()=>setView(tab.id)}
                   style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,background:"transparent",border:"none",cursor:"pointer",padding:"8px 0",opacity:active?1:0.6,transition:"opacity .15s"}}>
                   <tab.Icon a={active}/>
